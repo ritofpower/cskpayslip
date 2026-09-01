@@ -139,6 +139,7 @@ select.ctl{appearance:none;background-image:linear-gradient(45deg,transparent 50
 .modal h2{margin:0 0 5px;font-size:18px}
 .modal p.sub{margin:0 0 18px;font-size:13px;color:var(--soft);line-height:1.6}
 .modal .sep{border-top:1px solid var(--line);margin:16px 0 14px}
+#imgOut{width:100%;display:block;border:1px solid var(--line);border-radius:6px;margin-bottom:4px}
 
 /* ---- กระดาษ ---- */
 .scaler{width:100%;display:flex;justify-content:center}
@@ -318,7 +319,7 @@ td.totamt{text-align:right;font-size:15px;font-weight:600;font-variant-numeric:t
     <button class="btn" id="share">แชร์เข้า LINE</button>
   </div>
   <div class="acts">
-    <button class="btn ghost" id="dl">ดาวน์โหลดรูป</button>
+    <button class="btn ghost" id="dl">บันทึกลงแกลเลอรี</button>
     <button class="btn ghost" id="pr">พิมพ์</button>
   </div>
   <div class="acts">
@@ -449,6 +450,20 @@ td.totamt{text-align:right;font-size:15px;font-weight:600;font-variant-numeric:t
       <button class="btn danger" id="empDel">ลบพนักงานคนนี้</button>
     </div>
     <p class="flash" id="empFlash"></p>
+  </div>
+</div>
+
+<!-- บันทึกลงแกลเลอรี -->
+<div class="scrim" id="imgScrim">
+  <div class="modal">
+    <h2>บันทึกลงแกลเลอรี</h2>
+    <p class="sub" id="imgHint">กดค้างที่รูป แล้วเลือก “บันทึกรูปภาพ”</p>
+    <img id="imgOut" alt="สลิปเงินเดือน">
+    <div class="acts">
+      <button class="btn" id="imgShare">เปิดเมนูแชร์</button>
+      <button class="btn ghost" id="imgDl">บันทึกเป็นไฟล์</button>
+    </div>
+    <div style="text-align:center;margin-top:12px"><button class="linkbtn" id="imgClose">ปิด</button></div>
   </div>
 </div>
 
@@ -867,6 +882,7 @@ function renderPaper(){
   $('slNet').innerHTML=money(net)+'<small>บาท</small>';
   $('slWords').textContent=e?'( '+bahtText(net)+' )':'';
   $('slNote').textContent=S.note||'';
+  scheduleImage();
 }
 function renderAll(){ if(curEmp()) fillEmpCard(); renderRows(); renderTotals(); renderPaper(); }
 
@@ -1060,18 +1076,79 @@ function fileName(){
   const e=curEmp();
   return `สลิป-${e?e.name:'พนักงาน'}-${MONTHS[S.month]}${S.year+543}.png`;
 }
+let building=null;
 async function buildImage(){
   const k=stateKey();
   if(SHARE.key===k&&SHARE.file) return SHARE.file;
-  const paper=$('paper'), prev=paper.style.transform;
-  paper.style.transform='none';
-  let cv;
-  try{ cv=await html2canvas(paper,{scale:2,backgroundColor:'#ffffff',useCORS:true}); }
-  finally{ paper.style.transform=prev; fit(); }
-  const blob=await new Promise(r=>cv.toBlob(r,'image/png'));
-  SHARE.key=k; SHARE.blob=blob;
-  SHARE.file=new File([blob],fileName(),{type:'image/png'});
-  return SHARE.file;
+  if(building) { try{ await building; }catch(e){} if(SHARE.key===k&&SHARE.file) return SHARE.file; }
+  building=(async()=>{
+    const holder=document.createElement('div');
+    holder.style.cssText='position:fixed;left:-20000px;top:0;width:820px;height:1160px;overflow:hidden';
+    const clone=$('paper').cloneNode(true);
+    clone.removeAttribute('id');
+    clone.style.transform='none';
+    clone.style.boxShadow='none';
+    holder.appendChild(clone);
+    document.body.appendChild(holder);
+    let cv;
+    try{ cv=await html2canvas(clone,{scale:2,backgroundColor:'#ffffff',useCORS:true}); }
+    finally{ holder.remove(); }
+    const blob=await new Promise(r=>cv.toBlob(r,'image/png'));
+    SHARE.key=k; SHARE.blob=blob;
+    SHARE.file=new File([blob],fileName(),{type:'image/png'});
+    return SHARE.file;
+  })();
+  try{ return await building; } finally{ building=null; }
+}
+
+/* เตรียมรูปไว้ล่วงหน้าเงียบๆ — พอกดปุ่ม เมนูแชร์จะเด้งทันที ไม่โดน iOS บล็อก */
+let imgTimer=null;
+function scheduleImage(){
+  if(typeof html2canvas==='undefined'||!curEmp()) return;
+  clearTimeout(imgTimer);
+  imgTimer=setTimeout(()=>{ buildImage().catch(()=>{}); },1000);
+}
+
+function openImgBox(){
+  const url=URL.createObjectURL(SHARE.blob);
+  const im=$('imgOut');
+  if(im.dataset.url) URL.revokeObjectURL(im.dataset.url);
+  im.src=url; im.dataset.url=url;
+  const ios=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+  $('imgHint').textContent=ios
+    ? 'กดค้างที่รูป แล้วเลือก “บันทึกรูปภาพ” รูปจะเข้าแอปรูปภาพทันที'
+    : 'กดค้างที่รูป แล้วเลือก “ดาวน์โหลดรูปภาพ” รูปจะเข้าแกลเลอรี';
+  $('imgScrim').classList.add('on');
+}
+
+async function saveToGallery(){
+  const e=curEmp(); if(!e){ flash('flashMsg','bad','ยังไม่ได้เลือกพนักงาน'); return; }
+  const btn=$('dl');
+  if(typeof html2canvas==='undefined'){ window.print(); return; }
+  const ready=SHARE.key===stateKey()&&SHARE.file;
+  if(ready&&navigator.canShare&&navigator.canShare({files:[SHARE.file]})){
+    try{ await navigator.share({files:[SHARE.file],title:fileName()}); return; }
+    catch(err){ if(err&&err.name==='AbortError') return; openImgBox(); return; }
+  }
+  btn.disabled=true; btn.textContent='กำลังสร้างรูป…';
+  try{ await buildImage(); }
+  catch(err){
+    btn.disabled=false; btn.textContent='บันทึกลงแกลเลอรี';
+    flash('flashMsg','bad','สร้างรูปไม่สำเร็จ — ลองใช้ปุ่มพิมพ์');
+    return;
+  }
+  btn.disabled=false; btn.textContent='บันทึกลงแกลเลอรี';
+  if(navigator.canShare&&navigator.canShare({files:[SHARE.file]})){
+    try{ await navigator.share({files:[SHARE.file],title:fileName()}); return; }
+    catch(err){ if(err&&err.name==='AbortError') return; }
+  }
+  openImgBox();
+}
+function downloadFile(){
+  if(!SHARE.blob) return;
+  const a=document.createElement('a');
+  a.download=fileName(); a.href=URL.createObjectURL(SHARE.blob); a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
 }
 async function shareSlip(){
   const e=curEmp(); if(!e){ flash('flashMsg','bad','ยังไม่ได้เลือกพนักงาน'); return; }
@@ -1107,22 +1184,16 @@ async function shareSlip(){
 }
 $('share').addEventListener('click',shareSlip);
 $('pr').addEventListener('click',()=>window.print());
-$('dl').addEventListener('click',async()=>{
-  const btn=$('dl');
-  if(typeof html2canvas==='undefined'){window.print();return;}
-  btn.disabled=true; btn.textContent='กำลังสร้างรูป…';
-  try{
-    await buildImage();
-    const a=document.createElement('a');
-    a.download=fileName(); a.href=URL.createObjectURL(SHARE.blob); a.click();
-    setTimeout(()=>URL.revokeObjectURL(a.href),4000);
-  }catch(err){
-    btn.textContent='สร้างรูปไม่สำเร็จ — ใช้ปุ่มพิมพ์';
-    setTimeout(()=>{btn.textContent='ดาวน์โหลดรูป';btn.disabled=false;},2600);
-    return;
-  }
-  btn.disabled=false; btn.textContent='ดาวน์โหลดรูป';
+$('dl').addEventListener('click',saveToGallery);
+$('imgDl').addEventListener('click',downloadFile);
+$('imgShare').addEventListener('click',async()=>{
+  if(!SHARE.file) return;
+  if(navigator.canShare&&navigator.canShare({files:[SHARE.file]})){
+    try{ await navigator.share({files:[SHARE.file],title:fileName()}); }catch(err){}
+  }else downloadFile();
 });
+$('imgClose').addEventListener('click',()=>$('imgScrim').classList.remove('on'));
+$('imgScrim').addEventListener('click',e=>{if(e.target===$('imgScrim'))$('imgScrim').classList.remove('on');});
 
 function fit(){
   const av=document.querySelector('.stage').clientWidth-20;
