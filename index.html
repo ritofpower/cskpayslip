@@ -293,7 +293,7 @@ td.totamt{text-align:right;font-size:15px;font-weight:600;font-variant-numeric:t
     <div class="rows" id="dedRows"></div>
     <div class="chips" id="dedChips"></div>
     <div class="subtot"><span>รวมรายการหัก</span><b id="dedTot">0.00</b></div>
-    <p class="msg info on" style="margin-top:8px">ประกันสังคมคิดให้ 5% ของค่าแรง + ค่าตำแหน่ง (สูงสุด 750) แก้ตัวเลขเองได้</p>
+    <p class="msg info on" style="margin-top:8px">ประกันสังคมกับค่าหอพักเติมมาให้จากข้อมูลพนักงาน แก้ยอดในแถวได้เลย</p>
   </section>
 
   <section class="step toggles">
@@ -431,10 +431,9 @@ td.totamt{text-align:right;font-size:15px;font-weight:600;font-variant-numeric:t
     <div class="sep"></div>
     <div class="field">
       <label>ประกันสังคม</label>
-      <div class="seg three" id="fSsoSeg">
+      <div class="seg two" id="fSsoSeg">
         <button type="button" data-sso="none">ไม่มี</button>
-        <button type="button" data-sso="auto">คิด 5% ให้</button>
-        <button type="button" data-sso="fixed">กำหนดเอง</button>
+        <button type="button" data-sso="fixed">ใส่เอง</button>
       </div>
     </div>
     <div class="field" id="fSsoFixedBox" style="display:none">
@@ -476,14 +475,8 @@ const CATS={
   amazon:{id:'amazon',code:'AMZ',name:'คาเฟ่ อเมซอน'},
   maid  :{id:'maid',  code:'MAI',name:'แม่บ้าน'}
 };
-const INC_PRESETS=['% ยอดขาย','Incentive','ทิป','พิเศษ','อื่นๆ'];
-const DED_PRESETS=[
-  {k:'sso', label:'ประกันสังคม'},
-  {k:'dorm',label:'ค่าหอพัก'},
-  {k:'adv', label:'เบิกล่วงหน้า'},
-  {k:null,  label:'หักอื่นๆ'}
-];
-const SSO_RATE=0.05, SSO_MIN=1650, SSO_MAX=15000;
+const INC_PRESETS=['% ยอดขาย','Incentive','ทิป','วันหยุดพิเศษ','พิเศษ','อื่นๆ'];
+const DED_PRESETS=['เบิกล่วงหน้า','ผิด/ขาด','สาย','ไม่ตอกบัตร','อื่นๆ'];
 
 const LOGO=`<svg viewBox="0 0 62 70" xmlns="http://www.w3.org/2000/svg">
  <path d="M31 3C31 3 8 27 8 41a23 23 0 0 0 46 0C54 27 31 3 31 3Z" fill="#1d6fc0"/>
@@ -702,21 +695,10 @@ function fillEmpCard(){
   $('kWage').textContent=rate(e.wage)+(e.payType==='monthly'?' /เดือน':' /วัน');
   $('kPos').innerHTML=e.posAllow>0?rate(e.posAllow)+' /เดือน':'<span class="no">ไม่มี</span>';
   $('kOt').innerHTML=e.otRate>0?rate(e.otRate)+' /ชม.':'<span class="no">ไม่มี</span>';
-  if(e.sso==='none')      $('kSso').innerHTML='<span class="no">ไม่ส่ง</span>';
-  else if(e.sso==='fixed')$('kSso').textContent=rate(e.ssoFixed)+' /เดือน';
-  else{
-    const a=ssoAuto(e), has=e.payType==='monthly'||(S.slip&&Number(S.slip.days)>0);
-    $('kSso').innerHTML=has?rate(a)+' /เดือน (5%)':'<span class="no">5% สูงสุด 750</span>';
-  }
+  $('kSso').innerHTML=(e.sso==='fixed'&&Number(e.ssoFixed)>0)
+    ? rate(e.ssoFixed)+' /เดือน' : '<span class="no">ไม่ส่ง</span>';
   $('kDormRow').style.display=e.dorm>0?'flex':'none';
   $('kDorm').textContent=rate(e.dorm)+' /เดือน';
-}
-
-function ssoAuto(e){
-  const base=(e.payType==='monthly'?Number(e.wage)||0:(Number(e.wage)||0)*(S.slip?Number(S.slip.days)||0:0))
-             +(Number(e.posAllow)||0);
-  if(base<=0) return 0;
-  return Math.round(Math.min(Math.max(base,SSO_MIN),SSO_MAX)*SSO_RATE);
 }
 
 /* ─────────── สลิปของงวดนี้ ─────────── */
@@ -724,9 +706,10 @@ function blankSlip(){
   const e=curEmp();
   const s={days:0,otHours:0,inc:[],ded:[]};
   if(!e) return s;
-  S.slip=s;                                   // ให้ ssoAuto อ่านค่า days ได้
-  if(e.sso!=='none') s.ded.push({k:'sso',label:'ประกันสังคม',qty:'',amount:e.sso==='fixed'?(Number(e.ssoFixed)||0):ssoAuto(e),auto:e.sso==='auto'});
-  if(e.dorm>0)       s.ded.push({k:'dorm',label:'ค่าหอพัก',qty:'',amount:Number(e.dorm)||0});
+  if(e.sso==='fixed'&&Number(e.ssoFixed)>0)
+    s.ded.push({k:'sso',label:'ประกันสังคม',qty:'',amount:Number(e.ssoFixed)});
+  if(Number(e.dorm)>0)
+    s.ded.push({k:'dorm',label:'ค่าหอพัก',qty:'',amount:Number(e.dorm)});
   return s;
 }
 function loadSlip(){
@@ -750,14 +733,8 @@ function copyPrev(){
           ded:JSON.parse(JSON.stringify(prev.ded||[]))};
   $('days').value=S.slip.days||'';
   $('otHours').value=S.slip.otHours||'';
-  syncSso(); renderAll();
+  renderAll();
   flash('flashMsg','ok','ดึงรายการจากงวดก่อนมาแล้ว ตรวจตัวเลขอีกครั้งได้เลย');
-}
-
-/* ประกันสังคมแบบ 5% — ปรับตามค่าแรงที่กรอก จนกว่าจะพิมพ์ทับเอง */
-function syncSso(){
-  const e=curEmp(); if(!e||!S.slip) return;
-  S.slip.ded.forEach(r=>{ if(r.k==='sso'&&r.auto) r.amount=ssoAuto(e); });
 }
 
 /* ─────────── คำนวณ ─────────── */
@@ -782,7 +759,7 @@ const sum=a=>a.reduce((t,x)=>t+(Number(x.amount)||0),0);
 /* ─────────── แถวรายการในแผงซ้าย ─────────── */
 function rowEl(r,kind,i){
   const el=document.createElement('div');
-  el.className='rrow '+(kind==='inc'?'plus':'minus')+(r.auto?' auto':'');
+  el.className='rrow '+(kind==='inc'?'plus':'minus');
   el.innerHTML=`
     <input class="lb" type="text" data-f="label" value="${esc(r.label)}" placeholder="ชื่อรายการ">
     <button class="x" title="ลบรายการ">&times;</button>
@@ -792,7 +769,6 @@ function rowEl(r,kind,i){
     inp.addEventListener('input',()=>{
       const f=inp.dataset.f;
       r[f]=f==='amount'?(Number(inp.value)||0):inp.value;
-      if(f==='amount'&&r.k==='sso') r.auto=false;      // พิมพ์เองแล้ว หยุดคิดให้
       renderPaper(); renderTotals();
     });
   });
@@ -813,7 +789,7 @@ function renderRows(){
 }
 function renderChips(){
   $('incChips').innerHTML=INC_PRESETS.map(p=>`<button data-p="${esc(p)}">+ ${esc(p)}</button>`).join('');
-  $('dedChips').innerHTML=DED_PRESETS.map((p,i)=>`<button data-i="${i}">+ ${esc(p.label)}</button>`).join('');
+  $('dedChips').innerHTML=DED_PRESETS.map(p=>`<button data-p="${esc(p)}">+ ${esc(p)}</button>`).join('');
   $('incChips').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{
     if(!S.slip) return;
     S.slip.inc.push({label:b.dataset.p==='อื่นๆ'?'':b.dataset.p,qty:'',amount:0});
@@ -821,11 +797,7 @@ function renderChips(){
   }));
   $('dedChips').querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{
     if(!S.slip) return;
-    const p=DED_PRESETS[+b.dataset.i], e=curEmp();
-    let amt=0, auto=false;
-    if(p.k==='sso'&&e){ auto=e.sso==='auto'; amt=e.sso==='fixed'?(Number(e.ssoFixed)||0):ssoAuto(e); }
-    if(p.k==='dorm'&&e) amt=Number(e.dorm)||0;
-    S.slip.ded.push({k:p.k,label:p.k?p.label:'',qty:'',amount:amt,auto});
+    S.slip.ded.push({label:b.dataset.p==='อื่นๆ'?'':b.dataset.p,qty:'',amount:0});
     renderAll(); focusLast('dedRows');
   }));
 }
@@ -899,7 +871,7 @@ function renderPaper(){
 function renderAll(){ if(curEmp()) fillEmpCard(); renderRows(); renderTotals(); renderPaper(); }
 
 /* ─────────── กล่องแก้ไขพนักงาน ─────────── */
-const F={id:null,cat:'pump',payType:'daily',sso:'auto'};
+const F={id:null,cat:'pump',payType:'daily',sso:'fixed'};
 function segPick(segId,attr,val){
   document.querySelectorAll('#'+segId+' button').forEach(b=>
     b.setAttribute('aria-pressed',b.dataset[attr]===val?'true':'false'));
@@ -908,7 +880,7 @@ function openEmp(e){
   F.id=e?e.id:null;
   F.cat=e?e.cat:S.cat;
   F.payType=e?e.payType:'daily';
-  F.sso=e?e.sso:'auto';
+  F.sso=e&&e.sso?e.sso:'fixed';
   $('empTitle').textContent=e?'แก้ไขข้อมูลพนักงาน':'เพิ่มพนักงาน';
   $('fName').value=e?e.name:'';
   $('fWage').value=e?e.wage:'';
@@ -1000,7 +972,7 @@ $('empNew2').addEventListener('click',()=>openEmp(null));
 $('copyPrev').addEventListener('click',copyPrev);
 
 $('days').addEventListener('input',e=>{
-  if(!S.slip)return; S.slip.days=Number(e.target.value)||0; syncSso(); renderAll();
+  if(!S.slip)return; S.slip.days=Number(e.target.value)||0; renderAll();
 });
 $('otHours').addEventListener('input',e=>{
   if(!S.slip)return; S.slip.otHours=Number(e.target.value)||0; renderTotals(); renderPaper();
